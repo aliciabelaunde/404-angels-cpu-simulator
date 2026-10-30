@@ -1,0 +1,10 @@
+# VBA modules keep Windows line endings
+*.bas  text eol=crlf
+*.cls  text eol=crlf
+
+# Binary files: Git never tries to merge them
+*.xlsm binary
+*.xlsx binary
+*.png  binary
+*.pptx binary
+*.pdf  binary
