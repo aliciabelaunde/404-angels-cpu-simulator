@@ -9,6 +9,11 @@ Attribute VB_Name = "modBuild"
 '==============================================================================
 Option Explicit
 
+' This module must NOT depend on any other module, because it is the first
+' one imported into an empty workbook. Other modules are called by name
+' through Application.Run.
+
+Private Const BUILD_TITLE As String = "404 Angels"
 Private SrcPath As String
 
 ' Converts a OneDrive web path (https://...) into the local synced folder.
@@ -40,7 +45,7 @@ Private Function SrcFolder() As String
         ElseIf Dir(wbPath & "\..\src\*.bas") <> "" Then
             SrcPath = wbPath & "\..\src\"
         Else
-            SrcPath = InputBox("Paste the full path of the repository's src folder:", TEAM_NAME)
+            SrcPath = InputBox("Paste the full path of the repository's src folder:", BUILD_TITLE)
             If SrcPath <> "" And Right$(SrcPath, 1) <> "\" Then
                 SrcPath = SrcPath & "\"
             End If
@@ -76,29 +81,25 @@ Public Sub Build_ImportModules()
             ThisWorkbook.VBProject.VBComponents.Import folder & item
         End If
     Next item
-    MsgBox files.Count & " module(s) imported from " & folder, vbInformation, TEAM_NAME
+    MsgBox files.Count & " module(s) imported from " & folder, vbInformation, BUILD_TITLE
 End Sub
 
 ' Exports ONE module back to src/. Export only modules you own!
 '   Example (Immediate window):  Build_ExportModule "modCache"
 Public Sub Build_ExportModule(ByVal moduleName As String)
     ThisWorkbook.VBProject.VBComponents(moduleName).Export SrcFolder() & moduleName & ".bas"
-    MsgBox moduleName & ".bas exported to src/", vbInformation, TEAM_NAME
+    MsgBox moduleName & ".bas exported to src/", vbInformation, BUILD_TITLE
 End Sub
 
 ' Creates every sheet and resets the whole computer.
 Public Sub Build_SetupAll()
+    Dim steps As Variant, stepName As Variant
+    steps = Array("Core_SetupSheet", "Cache_SetupSheet", "VM_SetupSheet", "IO_SetupSheet", "Asm_SetupSheet", _
+                  "VM_Reset", "Cache_Reset", "IO_Reset", "Bus_Reset", "Core_Reset")
     Application.ScreenUpdating = False
-    Core_SetupSheet
-    Cache_SetupSheet
-    VM_SetupSheet
-    IO_SetupSheet
-    Asm_SetupSheet
-    VM_Reset
-    Cache_Reset
-    IO_Reset
-    Bus_Reset
-    Core_Reset
+    For Each stepName In steps
+        Application.Run stepName
+    Next stepName
     Application.ScreenUpdating = True
-    GetSheet(SH_CPU).Activate
+    ThisWorkbook.Worksheets("CPU").Activate
 End Sub
