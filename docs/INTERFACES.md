@@ -31,6 +31,9 @@ flowchart LR
 3. The bus reads through the cache: `Cache_Read(pa, isInstr)`.
 4. On a miss, the cache reads physical RAM: `RAM_Read(pa)`.
 
+**Non-cacheable I/O range:** physical `E0h–EFh` (virtual `1E0h–1EFh`, keyboard
+queue and LCD buffer) is always read and written directly in RAM, never cached.
+
 **Cache policy: write-through.** Every write goes to the cache **and** to RAM,
 so RAM is always up to date and the VM never needs to flush the cache —
 it only calls `Cache_InvalidateFrame(frame)` before replacing a frame.
@@ -38,6 +41,8 @@ it only calls `Cache_InvalidateFrame(frame)` before replacing a frame.
 ---
 
 ## modCore — owner: Alicia
+
+`IN` and `OUT` do not modify the flags. `[BX]` uses effective address `100h + BX`.
 
 | Function | Description |
 |---|---|
@@ -75,7 +80,7 @@ After every micro-step, `modCore` calls `Bus_Paint`, `Cache_Paint`, `VM_Paint`, 
 | Function | Description |
 |---|---|
 | `VM_Reset()` | Empty page table, RAM and swap |
-| `VM_Translate(vaddr As Long, isWrite As Boolean) As Long` | Virtual → physical; handles page fault |
+| `VM_Translate(vaddr As Long, isWrite As Boolean) As Long` | Virtual → physical; handles page fault. Page 15 is pinned to frame 7 and never replaced by FIFO (FIFO uses frames 0–6) |
 | `VM_LoadImage(bytes() As Long, length As Long)` | Writes a program image into virtual space (swap) |
 | `RAM_Read(pa As Long) As Long` | Physical RAM read (0..255) |
 | `RAM_Write(pa As Long, value As Long)` | Physical RAM write |
@@ -86,10 +91,13 @@ After every micro-step, `modCore` calls `Bus_Paint`, `Cache_Paint`, `VM_Paint`, 
 | Function | Description |
 |---|---|
 | `IO_Reset()` | Empties keyboard queue and LCD |
-| `IO_KeyboardRead() As Long` | Pops one char from the keyboard queue (0 if empty) |
-| `IO_LcdWrite(value As Long)` | Writes one char to the LCD video buffer |
+| `IO_KeyboardRead() As Long` | Pops one char from the keyboard queue stored in RAM `E0h–E7h` (0 if empty) |
+| `IO_LcdWrite(value As Long)` | Writes one char to the LCD video buffer stored in RAM `E8h–EFh` |
 | `IO_SetupSheet()` / `IO_Paint()` | Sheet `IO` |
-| `BtnKeyboardSend` | Button: pushes typed text into the queue |
+| `BtnKeyboardSend` | Button: pushes typed text into the queue in RAM (max 8 chars) |
+
+The queue and LCD **contents live in RAM** (through `RAM_Read` / `RAM_Write`);
+only helper counters (queue length, LCD cursor) may be VBA variables.
 
 ## modAssembler — owner: Paola
 

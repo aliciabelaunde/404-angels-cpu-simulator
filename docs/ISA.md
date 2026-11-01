@@ -3,7 +3,7 @@
 Source of truth for **both** the CPU decoder (`modCore`, Alicia) and the
 assembler (`modAssembler`, Paola). Any change here: PR approved by both.
 
-> Status: **DRAFT — agree on it in Sprint 0 before starting the assembler.**
+> Status: **AGREED** (reviewed by Alicia and Paola, PR #4).
 
 ## Carried over from Parcial 1 (ISA v2)
 
@@ -14,8 +14,8 @@ Register codes: `AX=00`, `BX=01`, `CX=10`, `DX=11`.
 | `00` | NOP | 1 |
 | `1X–7X` | MOV/ADD/SUB/CMP/AND/OR/XOR reg,reg (high nibble = op, low nibble = `dd ss`) | 1 |
 | `80–9B` | MOV…XOR reg,imm8 | 2 |
-| `A8–AB` | LOAD reg,[BX] | 1 |
-| `AC–AF` | STORE [BX],reg | 1 |
+| `A8–AB` | LOAD reg,[BX] (effective address `100h + BX`) | 1 |
+| `AC–AF` | STORE [BX],reg (effective address `100h + BX`) | 1 |
 | `B0–BB` | INC / DEC / NOT reg | 1 |
 | `FF` | HLT | 1 |
 
@@ -33,7 +33,9 @@ Instructions with an absolute address now carry **2 address bytes**
 | `A4–A7` | STORE [addr9],reg | 3 |
 | `C0–C6` | JMP, JZ, JNZ, JC, JNC, JS, JNS addr9 | 3 |
 
-`[BX]` addressing stays 8-bit (pointer inside page 0–7 of the virtual space).
+`[BX]` addressing points to the **data area**: effective address = `100h + BX`
+(`BX = 00h` → `100h`, `BX = FFh` → `1FFh`). This way BX can walk through the
+data pages 8–15 and never touches the code area.
 
 ## New in v3: I/O
 
@@ -42,9 +44,9 @@ Instructions with an absolute address now carry **2 address bytes**
 | `D0–D3` | IN reg,[KBD] | 1 | `En_KBD` |
 | `D4–D7` | OUT [LCD],reg | 1 | `Ld_LCD` |
 
-Bits 1–0 = register code.
+Bits 1–0 = register code. **IN and OUT do not modify the flags** (same as x86).
 
-## Memory map (virtual, proposal)
+## Memory map (virtual)
 
 | Range | Use |
 |---|---|
@@ -53,4 +55,16 @@ Bits 1–0 = register code.
 | `1E0h–1E7h` | Keyboard queue (8 bytes) — page 15 |
 | `1E8h–1EFh` | LCD video buffer (8 bytes) — page 15 |
 
-Page 15 is **pinned** to frame 7 (never evicted), so I/O never page-faults.
+Page 15 is **pinned** to physical frame 7 (`E0h–FFh`): it is always present
+and is **never chosen by FIFO**, so I/O never page-faults. FIFO replacement
+only uses frames 0–6.
+
+The keyboard queue and the LCD buffer are **stored in RAM** (frame 7):
+
+| Virtual | Physical | Content |
+|---|---|---|
+| `1E0h–1E7h` | `E0h–E7h` | Keyboard queue, 8 bytes (oldest char at `1E0h`) |
+| `1E8h–1EFh` | `E8h–EFh` | LCD video buffer, 8 bytes (one ASCII char per cell) |
+
+The I/O range `1E0h–1EFh` is **non-cacheable**: the keyboard can change it at
+any time, so the cache always reads it directly from RAM.
