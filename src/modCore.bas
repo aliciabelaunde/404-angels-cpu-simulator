@@ -23,7 +23,7 @@ Attribute VB_Name = "modCore"
 '    A3:B11  registers        C3:D6  flags        C8:D11 counters, status, delay
 '    A13:D17 buttons          A19:D25 control unit
 '    A27:D46 micro-operation log (full history in sheet Log)
-'    F3:N27  reserved for the bus panel (modBus)
+'    F3:N27  bus panel (modBus, created by Bus_SetupSheet)
 '==============================================================================
 Option Explicit
 
@@ -223,6 +223,11 @@ Public Function Core_Mnemonic(ByVal op As Long) As String
     Dim d As TInstr
     d = Decode(op And &HFF)
     If d.Valid Then Core_Mnemonic = InstrText(d, -1) Else Core_Mnemonic = "data"
+End Function
+
+' Temporary register of the control unit (shown by the bus panel)
+Public Function Core_TMP() As Long
+    Core_TMP = TMP
 End Function
 
 ' Size in bytes of the instruction that starts with this opcode
@@ -719,6 +724,7 @@ Public Sub Core_SetupSheet()
 
     SetupLogSheet
     CreateButtons
+    Bus_SetupSheet
 End Sub
 
 Private Sub Header(ByVal r As Range, ByVal txt As String)
