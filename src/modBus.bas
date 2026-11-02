@@ -40,13 +40,11 @@ Public Sub Bus_MemWrite(ByVal vaddr As Long, ByVal value As Long)
 End Sub
 
 Public Function Bus_IoRead(ByVal port As Long) As Long
-    ControlWord = "En_KBD"
     DataBus = IO_KeyboardRead()
     Bus_IoRead = DataBus
 End Function
 
 Public Sub Bus_IoWrite(ByVal port As Long, ByVal value As Long)
-    ControlWord = "Ld_LCD"
     DataBus = value And &HFF
     IO_LcdWrite DataBus
 End Sub
