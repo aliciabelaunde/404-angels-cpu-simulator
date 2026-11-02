@@ -342,6 +342,7 @@ Public Sub VM_SetupSheet()
     ws.Range("H16").HorizontalAlignment = xlLeft
     ws.Range("H28").HorizontalAlignment = xlLeft
 
+    DrawVmDiagram ws
     MemChanged = True
     VM_Paint
 End Sub
@@ -356,6 +357,7 @@ Public Sub VM_Paint()
         MemChanged = False
     End If
     PaintFramesAndSwap ws
+    PaintVmDiagram ws
 End Sub
 
 Private Sub PaintTranslation(ByVal ws As Worksheet)
@@ -495,4 +497,167 @@ Private Sub PaintFramesAndSwap(ByVal ws As Worksheet)
         End If
         ws.Range(ws.Cells(30 + p, 8), ws.Cells(30 + p, 41)).Interior.Color = color
     Next p
+End Sub
+
+'==============================================================================
+'  6. PAGING DIAGRAM (shapes on sheet Memory, under the page table)
+'     CPU -> MMU (page table) -> RAM frame
+'     PAGE IN arrow    = red when a page comes from swap (page fault)
+'     WRITE BACK arrow = orange when a dirty page goes back to swap
+'==============================================================================
+Private Const VMDG As String = "vmdg_"       ' prefix of every shape of this diagram
+
+Private Function VmShape(ByVal ws As Worksheet, ByVal nm As String, ByVal kind As Long, _
+                         ByVal x As Double, ByVal y As Double, ByVal w As Double, ByVal h As Double, _
+                         ByVal txt As String) As Shape
+    Dim shp As Shape
+    Set shp = ws.Shapes.AddShape(kind, ws.Range("A36").Left + x, ws.Range("A36").Top + y, w, h)
+    shp.Name = VMDG & nm
+    shp.Fill.ForeColor.RGB = RGB(255, 255, 255)
+    shp.Line.ForeColor.RGB = RGB(31, 42, 74)
+    shp.Line.Weight = 1
+    If txt <> "" Then
+        shp.TextFrame.Characters.Text = txt
+        shp.TextFrame.Characters.Font.Size = 8
+        shp.TextFrame.Characters.Font.Bold = True
+        shp.TextFrame.Characters.Font.Color = RGB(31, 42, 74)
+        shp.TextFrame.HorizontalAlignment = xlHAlignCenter
+        shp.TextFrame.VerticalAlignment = xlVAlignCenter
+    End If
+    Set VmShape = shp
+End Function
+
+Private Sub VmText(ByVal ws As Worksheet, ByVal nm As String, ByVal txt As String)
+    ws.Shapes(VMDG & nm).TextFrame.Characters.Text = txt
+End Sub
+
+Private Sub VmFill(ByVal ws As Worksheet, ByVal nm As String, ByVal color As Long)
+    ws.Shapes(VMDG & nm).Fill.ForeColor.RGB = color
+End Sub
+
+Private Sub DeleteVmDiagram(ByVal ws As Worksheet)
+    Dim i As Long
+    For i = ws.Shapes.Count To 1 Step -1
+        If Left(ws.Shapes(i).Name, Len(VMDG)) = VMDG Then ws.Shapes(i).Delete
+    Next i
+End Sub
+
+Private Sub DrawVmDiagram(ByVal ws As Worksheet)
+    Dim shp As Shape, i As Long
+    On Error Resume Next                     ' if a shape fails, the sheet still works
+    DeleteVmDiagram ws
+
+    ' frame and title
+    Set shp = VmShape(ws, "frame", 1, 0, 0, 430, 300, "")
+    shp.Fill.ForeColor.RGB = RGB(244, 247, 251)
+    shp.Line.ForeColor.RGB = RGB(200, 208, 222)
+    Set shp = VmShape(ws, "title", 1, 0, 0, 430, 18, "PAGING DIAGRAM - live view of every memory access")
+    shp.Fill.ForeColor.RGB = RGB(31, 42, 74)
+    shp.TextFrame.Characters.Font.Color = RGB(255, 255, 255)
+
+    ' CPU -> MMU
+    Call VmShape(ws, "cpu", 5, 10, 28, 120, 36, "CPU" & vbLf & "vaddr -")
+    Call VmShape(ws, "arrow_mmu", 33, 135, 38, 30, 16, "")
+    Call VmShape(ws, "mmu", 5, 170, 28, 250, 36, "MMU / PAGE TABLE" & vbLf & "-")
+
+    ' RAM: 8 frames
+    Set shp = VmShape(ws, "ram_label", 1, 10, 74, 150, 12, "RAM (8 frames)")
+    shp.Line.Visible = msoFalse
+    shp.Fill.Visible = msoFalse
+    For i = 0 To 7
+        Call VmShape(ws, "frame" & i, 5, 10, 90 + i * 25, 150, 21, "Frame " & i & ": free")
+    Next i
+
+    ' SWAP: 16 pages in 2 columns
+    Set shp = VmShape(ws, "swap_label", 1, 290, 74, 130, 12, "SWAP / DISK (16 pages)")
+    shp.Line.Visible = msoFalse
+    shp.Fill.Visible = msoFalse
+    For i = 0 To 15
+        Call VmShape(ws, "page" & i, 1, 290 + (i \ 8) * 68, 90 + (i Mod 8) * 25, 62, 21, "Page " & i)
+    Next i
+
+    ' arrows between swap and RAM, and the status box
+    Call VmShape(ws, "pagein", 34, 172, 105, 108, 36, "PAGE IN")
+    Call VmShape(ws, "writeback", 33, 172, 160, 108, 36, "WRITE BACK")
+    Call VmShape(ws, "status", 5, 180, 225, 92, 40, "-")
+End Sub
+
+Private Sub PaintVmDiagram(ByVal ws As Worksheet)
+    Dim i As Long, color As Long
+    On Error GoTo NoDiagram                  ' the diagram does not exist yet
+
+    ' CPU and MMU boxes
+    If LastVPN >= 0 Then
+        VmText ws, "cpu", "CPU" & vbLf & "vaddr " & Hex3(LastVaddr) & "h"
+        VmText ws, "mmu", "MMU / PAGE TABLE" & vbLf & "VPN " & LastVPN & " | Offset " & LastOffset & "  ->  PFN " & PageFrame(LastVPN)
+    Else
+        VmText ws, "cpu", "CPU" & vbLf & "vaddr -"
+        VmText ws, "mmu", "MMU / PAGE TABLE" & vbLf & "-"
+    End If
+
+    ' frames
+    For i = 0 To 7
+        If FrameOwner(i) >= 0 Then
+            VmText ws, "frame" & i, "Frame " & i & ": page " & FrameOwner(i)
+        Else
+            VmText ws, "frame" & i, "Frame " & i & ": free"
+        End If
+        If i = 7 Then
+            color = RGB(221, 235, 247)
+        ElseIf FrameOwner(i) >= 0 Then
+            color = RGB(198, 239, 206)
+        Else
+            color = RGB(217, 217, 217)
+        End If
+        If LastVPN >= 0 Then
+            If i = PageFrame(LastVPN) Then
+                If LastWasFault Then
+                    color = RGB(255, 199, 206)
+                Else
+                    color = RGB(255, 235, 156)
+                End If
+            End If
+        End If
+        VmFill ws, "frame" & i, color
+    Next i
+
+    ' swap pages
+    For i = 0 To 15
+        If LastWasFault And i = LastVPN Then
+            color = RGB(255, 199, 206)
+        ElseIf VictimSaved And i = VictimPage Then
+            color = RGB(248, 203, 173)
+        ElseIf PageP(i) = 1 Then
+            color = RGB(198, 239, 206)
+        Else
+            color = RGB(255, 255, 255)
+        End If
+        VmFill ws, "page" & i, color
+    Next i
+
+    ' arrows and status
+    If LastWasFault Then
+        VmFill ws, "pagein", RGB(192, 0, 0)
+        VmText ws, "pagein", "PAGE IN" & vbLf & "page " & LastVPN & " -> frame " & PageFrame(LastVPN)
+        VmFill ws, "status", RGB(192, 0, 0)
+        VmText ws, "status", "PAGE FAULT"
+    Else
+        VmFill ws, "pagein", RGB(230, 230, 230)
+        VmText ws, "pagein", "PAGE IN"
+        If LastVPN >= 0 Then
+            VmFill ws, "status", RGB(0, 128, 0)
+            VmText ws, "status", "PAGE HIT"
+        Else
+            VmFill ws, "status", RGB(230, 230, 230)
+            VmText ws, "status", "-"
+        End If
+    End If
+    If VictimSaved Then
+        VmFill ws, "writeback", RGB(237, 125, 49)
+        VmText ws, "writeback", "WRITE BACK" & vbLf & "page " & VictimPage
+    Else
+        VmFill ws, "writeback", RGB(230, 230, 230)
+        VmText ws, "writeback", "WRITE BACK"
+    End If
+NoDiagram:
 End Sub
