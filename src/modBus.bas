@@ -737,6 +737,11 @@ Private Sub PaintDiagram(ByVal inDrv As String, ByVal inLd As String, ByVal exDr
     DgFill ws, "wire_MEM", IIf(Has("Mem_R"), ColEnable(), IIf(Has("Mem_W"), ColLoad(), ColBusOff()))
     DgFill ws, "wire_MEMaddr", IIf(addrOn, ColBusOn(), ColBusOff())
     DgFill ws, "box_MEM", IIf(Has("Mem_R"), RGB(214, 240, 224), IIf(Has("Mem_W"), RGB(214, 228, 247), RGB(255, 255, 255)))
+    If Has("Mem_R") Or Has("Mem_W") Then
+        DgText ws, "box_MEM", "MEMORY" & vbLf & Cache_LastResult(), RGB(31, 42, 74)
+    Else
+        DgText ws, "box_MEM", "MEMORY" & vbLf & "cache L1/L2 + RAM (virtual)", RGB(31, 42, 74)
+    End If
     DgFill ws, "buf_KBD", IIf(Has("IO_R"), ColEnable(), ColHighZ())
     DgFill ws, "wire_KBD", IIf(Has("IO_R"), ColEnable(), ColBusOff())
     DgFill ws, "box_KBD", IIf(Has("IO_R"), RGB(214, 240, 224), RGB(255, 255, 255))
