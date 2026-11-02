@@ -88,21 +88,143 @@ Public Sub VM_Reset()
 End Sub
 
 '==============================================================================
-'  2. ADDRESS TRANSLATION  (temporary: no paging yet)
+'  2. ADDRESS TRANSLATION AND PAGE FAULT
 '==============================================================================
 Public Function VM_Translate(ByVal vaddr As Long, ByVal isWrite As Boolean) As Long
-    VM_Translate = vaddr And &HFF
+    Dim vpn As Long, offset As Long
+
+    vaddr = vaddr And &H1FF             ' keep 9 bits (000h..1FFh)
+    vpn = vaddr \ 32
+    offset = vaddr Mod 32
+
+    VM_Accesses = VM_Accesses + 1
+    LastWasFault = False
+    VictimPage = -1
+    VictimSaved = False
+
+    ' P = 0: the page is on disk -> page fault
+    If PageP(vpn) = 0 Then
+        PageFault vpn
+    End If
+
+    PageRef(vpn) = 1
+    If isWrite Then
+        PageDirty(vpn) = 1
+    End If
+
+    LastVaddr = vaddr
+    LastVPN = vpn
+    LastOffset = offset
+    LastWasWrite = isWrite
+    LastPA = PageFrame(vpn) * 32 + offset
+    If LastWasFault = False Then
+        EventText = "Page " & vpn & " is in frame " & PageFrame(vpn) & " (P = 1)."
+    End If
+
+    VM_Translate = LastPA
 End Function
 
+' Page fault: same 4 steps as in class
+'   1. the CPU tries to use a page with P = 0
+'   2. look for the page in swap
+'   3. take a free frame (or the oldest one with FIFO) and copy the 32 bytes
+'   4. update the table (P = 1) and continue the instruction
+Private Sub PageFault(ByVal vpn As Long)
+    Dim frame As Long, i As Long
+
+    VM_PageFaults = VM_PageFaults + 1
+    LastWasFault = True
+
+    ' choose a frame
+    If FramesUsed < 7 Then
+        frame = FramesUsed              ' there is still a free frame
+        FramesUsed = FramesUsed + 1
+    Else
+        frame = NextVictim              ' FIFO: the oldest page leaves
+        NextVictim = (NextVictim + 1) Mod 7
+        VictimPage = FrameOwner(frame)
+
+        ' if the victim was modified, save it to swap first
+        If PageDirty(VictimPage) = 1 Then
+            For i = 0 To 31
+                Swap(VictimPage * 32 + i) = RAM(frame * 32 + i)
+            Next i
+            VictimSaved = True
+        End If
+
+        PageP(VictimPage) = 0
+        PageFrame(VictimPage) = -1
+        PageDirty(VictimPage) = 0
+        PageRef(VictimPage) = 0
+    End If
+
+    ' the cache must forget what it had from this frame
+    Cache_InvalidateFrame frame
+
+    ' copy the page from swap to RAM
+    For i = 0 To 31
+        RAM(frame * 32 + i) = Swap(vpn * 32 + i)
+    Next i
+
+    ' update the page table
+    PageP(vpn) = 1
+    PageFrame(vpn) = frame
+    PageDirty(vpn) = 0
+    FrameOwner(frame) = vpn
+
+    EventText = "PAGE FAULT: page " & vpn & " copied from swap to frame " & frame & "."
+    If VictimPage >= 0 Then
+        EventText = EventText & " FIFO took out page " & VictimPage
+        If VictimSaved Then
+            EventText = EventText & " (Dirty = 1, saved to swap)."
+        Else
+            EventText = EventText & " (Dirty = 0, not saved)."
+        End If
+    End If
+    MemChanged = True
+End Sub
+
 '==============================================================================
-'  3. PROGRAM LOADER  (temporary: copies the program straight into RAM)
+'  3. PROGRAM LOADER
+'  The program goes to swap. Pages 0..14 start with P = 0, so the first
+'  access to each page is a page fault.
 '==============================================================================
 Public Sub VM_LoadImage(ByRef bytes() As Long, ByVal length As Long)
     Dim i As Long
+
+    If length > 512 Then length = 512
     For i = 0 To length - 1
         Swap(i) = bytes(i) And &HFF
-        If i < 256 Then RAM(i) = Swap(i)
     Next i
+
+    ' pages 0..14 are on disk
+    For i = 0 To 14
+        PageP(i) = 0
+        PageFrame(i) = -1
+        PageDirty(i) = 0
+        PageRef(i) = 0
+    Next i
+
+    ' frames 0..6 are empty
+    For i = 0 To 6 * 32 + 31
+        RAM(i) = 0
+    Next i
+    For i = 0 To 6
+        FrameOwner(i) = -1
+    Next i
+    FramesUsed = 0
+    NextVictim = 0
+
+    ' page 15 is always in frame 7
+    For i = 0 To 31
+        RAM(7 * 32 + i) = Swap(15 * 32 + i)
+    Next i
+
+    LastVPN = -1
+    LastPA = -1
+    LastWasFault = False
+    VictimPage = -1
+    EventText = "Program loaded in swap (" & length & " bytes). Pages 0-14 have P = 0."
     MemChanged = True
 End Sub
 
