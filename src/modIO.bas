@@ -103,14 +103,42 @@ Public Sub BtnKeyboardSend()
 End Sub
 
 '==============================================================================
-'  3. LCD 8x1  (temporary: writes at the cursor, no scroll yet)
+'  3. LCD 8x1
+'     OUT [LCD], reg writes the char at the cursor and moves the cursor.
+'     When the line is full, the text scrolls one position to the left.
+'     Char 08h (backspace) erases the previous char.
 '==============================================================================
 Public Sub IO_LcdWrite(ByVal value As Long)
-    If LcdCursor < 8 Then
-        RAM_Write LCD_PA + LcdCursor, value
-        LastLcd = LcdCursor
-        LcdCursor = LcdCursor + 1
+    Dim i As Long
+    value = value And &HFF
+    LastRead = -1
+    LastWrite = -1
+
+    ' backspace: go back one position and write a space
+    If value = 8 Then
+        If LcdCursor > 0 Then
+            LcdCursor = LcdCursor - 1
+            RAM_Write LCD_PA + LcdCursor, 32
+            LastLcd = LcdCursor
+            IoEvent = "OUT: backspace, cursor back to " & LcdCursor & "."
+        Else
+            IoEvent = "OUT: backspace ignored (cursor at 0)."
+        End If
+        Exit Sub
     End If
+
+    ' line full: scroll left (each cell takes the value of the next one)
+    If LcdCursor = 8 Then
+        For i = 0 To 6
+            RAM_Write LCD_PA + i, RAM_Read(LCD_PA + i + 1)
+        Next i
+        LcdCursor = 7
+    End If
+
+    RAM_Write LCD_PA + LcdCursor, value
+    LastLcd = LcdCursor
+    IoEvent = "OUT: '" & Chr(value) & "' written at " & Hex2(LCD_PA + LcdCursor) & "h (cursor " & LcdCursor & ")."
+    LcdCursor = LcdCursor + 1
 End Sub
 
 '==============================================================================
