@@ -3,10 +3,13 @@
 This file is the **contract** between modules. Each module may only call the
 public functions listed here. Changing this file requires a PR approved by both.
 
-Each function below will first be added as a **working stub** (a simple
-version that already runs), so each member can test her module without
-waiting for the other. Each owner then replaces her stubs with the real
-implementation **without changing the signature**.
+Each function below was first added as a **working stub** (a simple version
+that already runs), so each member can test her module without waiting for
+the other. Each owner then replaces her stubs with the real implementation
+**without changing the signature**.
+
+Public **variables** listed here may be **read** by other modules (for
+example, to display them), but only the owner module may change them.
 
 ---
 
@@ -47,9 +50,16 @@ it only calls `Cache_InvalidateFrame(frame)` before replacing a frame.
 | Function | Description |
 |---|---|
 | `Core_Reset()` | Registers, flags and PC to 0 |
-| `Core_SetupSheet()` | Builds sheet `CPU` (registers, buttons, log) |
+| `Core_SetupSheet()` | Builds sheet `CPU` (registers, buttons, log) and calls `Bus_SetupSheet` |
 | `Core_Paint()` | Repaints sheet `CPU` |
+| `Core_Mnemonic(op As Long) As String` | Disassembles one opcode, e.g. `&H21` → `"ADD AX, BX"` (`"data"` if invalid) |
+| `Core_InstrSize(op As Long) As Long` | Size in bytes (1, 2 or 3) of the instruction that starts with this opcode |
+| `Core_TMP() As Long` | Value of the control unit's temporary register (for the bus panel) |
 | `BtnStep`, `BtnStepInstr`, `BtnRun`, `BtnPause`, `BtnReset` | Buttons |
+| `BtnLoadDemo` | Developer shortcut (hardcoded demo). **Removed in release v2.0** — programs live in sheet `Programs` |
+
+**Public variables (read-only for other modules):** `PC`, `IR`, `MAR`, `MDR`,
+`AX`, `BX`, `CX`, `DX`, `ZF`, `CF`, `SF`, `OPV` (operand, `-1` = none), `Halted`.
 
 After every micro-step, `modCore` calls `Bus_Paint`, `Cache_Paint`, `VM_Paint`, `IO_Paint`.
 
@@ -63,7 +73,12 @@ After every micro-step, `modCore` calls `Bus_Paint`, `Cache_Paint`, `VM_Paint`, 
 | `Bus_MemWrite(vaddr As Long, value As Long)` | CPU memory write |
 | `Bus_IoRead(port As Long) As Long` | `IN` — enables `En_KBD` |
 | `Bus_IoWrite(port As Long, value As Long)` | `OUT` — enables `Ld_LCD` |
+| `Bus_SetupSheet()` | Creates the bus table and the bus diagram on sheet `CPU` |
 | `Bus_Paint()` | Repaints the bus panel on sheet `CPU` |
+| `Bus_ControlBits() As String` | The 24-bit control word as text, e.g. `"10010000 00000000 00000000"` |
+
+**Public variables (read-only):** `ControlWord`, `AddressBus` (9 bits),
+`DataBus` (8 bits, `-1` = High-Z).
 
 ## modCache — owner: Alicia
 
@@ -73,7 +88,11 @@ After every micro-step, `modCore` calls `Bus_Paint`, `Cache_Paint`, `VM_Paint`, 
 | `Cache_Read(pa As Long, isInstr As Boolean) As Long` | Read through L1 → L2 → RAM |
 | `Cache_Write(pa As Long, value As Long)` | Write-through |
 | `Cache_InvalidateFrame(frame As Long)` | Drops cached lines of a physical frame |
+| `Cache_LastResult() As String` | Text of the last access, e.g. `"L1I HIT 01h"` (shown in the bus diagram) |
 | `Cache_SetupSheet()` / `Cache_Paint()` | Sheet `Cache` |
+
+**Public variables (read-only):** `L1I_Hits`, `L1I_Misses`, `L1D_Hits`,
+`L1D_Misses`, `L2_Hits`, `L2_Misses`, `Uncached`.
 
 ## modVirtualMemory — owner: Paola
 
@@ -85,6 +104,8 @@ After every micro-step, `modCore` calls `Bus_Paint`, `Cache_Paint`, `VM_Paint`, 
 | `RAM_Read(pa As Long) As Long` | Physical RAM read (0..255) |
 | `RAM_Write(pa As Long, value As Long)` | Physical RAM write |
 | `VM_SetupSheet()` / `VM_Paint()` | Sheet `Memory` |
+
+**Public variables (read-only):** `VM_Accesses`, `VM_PageFaults`.
 
 ## modIO — owner: Paola
 
@@ -113,7 +134,7 @@ only helper counters (queue length, LCD cursor) may be VBA variables.
 
 | Sheet | Owner module |
 |---|---|
-| `CPU` | modCore + modBus (Alicia) |
+| `CPU` | modCore (registers, control unit, log) + modBus (bus table in `F:N`, bus diagram from column `P`) — Alicia |
 | `Cache` | modCache (Alicia) |
 | `Memory` | modVirtualMemory (Paola) |
 | `IO` | modIO (Paola) |
