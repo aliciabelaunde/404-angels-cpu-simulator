@@ -258,18 +258,37 @@ La **página 15** (teclado y LCD) está fija en el **marco 7** y nunca la reempl
 
 ## 6. Periféricos: teclado y LCD 8x1
 
-> Sección a cargo de Paola (tarjeta #7).
-
-Los periféricos están **mapeados en memoria**, dentro de la página 15 (marco 7):
+Los periféricos están **mapeados en memoria**, dentro de la página 15 (marco 7). La zona `E0h–EFh` **no pasa por la caché**.
 
 | Virtual | Física | Contenido |
 |---|---|---|
-| `1E0h–1E7h` | `E0h–E7h` | Cola del teclado (8 bytes, el carácter más antiguo en `1E0h`) |
+| `1E0h–1E7h` | `E0h–E7h` | Cola del teclado: 8 bytes, **cola circular (FIFO)** |
 | `1E8h–1EFh` | `E8h–EFh` | Buffer de video de la LCD (8 caracteres ASCII) |
 
-- `IN reg, [KBD]` (`D0–D3`): el teclado pone el carácter en el bus (`En_KBD`) y se guarda en el registro.
-- `OUT [LCD], reg` (`D4–D7`): el registro pone el carácter en el bus y la LCD lo guarda (`Ld_LCD`).
+### Cola circular del teclado
 
+Los 8 caracteres se guardan en la RAM (`E0h–E7h`) y tres punteros controlan la cola: **HEAD** (siguiente carácter a leer), **TAIL** (siguiente posición libre) y **COUNT** (caracteres en espera).
+
+| Operación | Condición | Acción |
+|---|---|---|
+| El teclado escribe un carácter | `COUNT < 8` | `RAM[E0h + TAIL] = carácter`, `TAIL = (TAIL + 1) mod 8`, `COUNT + 1` |
+| `IN reg, [KBD]` | `COUNT > 0` | `reg = RAM[E0h + HEAD]`, `HEAD = (HEAD + 1) mod 8`, `COUNT − 1` |
+| `IN reg, [KBD]` | `COUNT = 0` | `reg = 0` (cola vacía) |
+| El teclado escribe un carácter | `COUNT = 8` | Se descarta (desbordamiento) |
+
+### LCD 8x1
+
+`OUT [LCD], reg` escribe el carácter en la posición del cursor (`E8h + cursor`) y avanza el cursor. Cuando la línea se llena, el texto **se desplaza una posición a la izquierda**. El carácter `08h` (retroceso) mueve el cursor hacia atrás y escribe un espacio.
+
+### Instrucciones de E/S
+
+- `IN reg, [KBD]` (`D0–D3`): el teclado pone el carácter en el bus de datos (`IO_R En_KBD`) y se guarda en el registro.
+- `OUT [LCD], reg` (`D4–D7`): el registro pone el carácter en el bus (`IO_W En_reg`) y la LCD lo guarda (`Ld_LCD`).
+- Ninguna de las dos modifica las banderas.
+
+**Hoja IO:** celda para escribir texto con el botón **SEND**, la cola con sus punteros HEAD, TAIL y COUNT, la pantalla LCD de 8 caracteres y las señales del bus en cada operación.
+
+---
 
 ## 7. Conjunto de instrucciones (ISA v3)
 
@@ -321,16 +340,22 @@ Códigos de registro: `AX = 00`, `BX = 01`, `CX = 10`, `DX = 11`. Fuente oficial
 
 ## 8. Directorio de programas
 
-> Sección a cargo de Paola (tarjetas #9 y #11).
+Los programas **no están dentro del código VBA**: se escriben en las **celdas de la hoja Programs**. El catálogo ocupa las columnas **K, L y M** y la carpeta [`programs/`](programs/) guarda una copia de cada uno.
 
-Los programas se escriben **en las celdas de la hoja Programs**, no dentro del código VBA. El ensamblador revisa la sintaxis, los convierte a código máquina según la ISA v3 y el cargador los coloca en la memoria virtual.
+| # | Programa | Qué demuestra | Resultado |
+|---|---|---|---|
+| 1 | [`01_loops_factorial.asm`](programs/01_loops_factorial.asm) | Bucles anidados con AX, BX, CX y DX | `5! = 120 = 78h` en `101h` |
+| 2 | [`02_keyboard_echo.asm`](programs/02_keyboard_echo.asm) | `IN` / `OUT`: lo escrito en el teclado aparece en la LCD | 8 caracteres en la LCD |
+| 3 | [`03_page_faults.asm`](programs/03_page_faults.asm) | Accesos dispersos a las páginas 8–14: Page Faults, FIFO, write back y fallos de caché | `SUM = 23h` en `1DFh` |
 
-| # | Programa | Qué demuestra |
-|---|---|---|
-| 1 | Cálculo aritmético con bucles | Registros AX, BX, CX, DX, banderas y saltos |
-| 2 | Entrada de teclado con eco en la LCD | Instrucciones `IN` / `OUT` y periféricos |
-| 3 | Accesos dispersos | Page Faults, reemplazo FIFO y fallos de caché |
+**Ensamblador de dos pasadas:** acepta etiquetas (`BUCLE:`), comentarios (`;`), números decimales o hexadecimales (`0Ch`, `1E0h`) y las directivas `ORG` y `DB`. Las líneas con error se marcan en rojo con su descripción.
 
+**Sintaxis:**
+```
+ETIQUETA:  MNEMONICO operando1, operando2   ; comentario
+```
+
+---
 
 ## 9. Manual de uso
 
@@ -349,8 +374,8 @@ Los programas se escriben **en las celdas de la hoja Programs**, no dentro del c
 | **RESET** | Registros, banderas y PC en 0. La memoria se conserva |
 
 ### Ejecutar un programa
-1. En la hoja **Programs**, elegir un programa del catálogo o escribir uno nuevo.
-2. Presionar **ASSEMBLE** para revisar la sintaxis y **LOAD** para cargarlo en memoria.
+1. En la hoja **Programs**, presionar **OPEN 1**, **OPEN 2** u **OPEN 3**: el programa se copia al editor (columna B), donde se puede modificar. También se puede escribir uno nuevo.
+2. Presionar **ASSEMBLE** para revisar la sintaxis y ver las direcciones y bytes de cada línea, y **LOAD PROGRAM** para cargarlo en la memoria virtual.
 3. En la hoja **CPU**, usar **STEP**, **STEP INSTR** o **RUN**.
 4. Observar:
    - **CPU:** registros, fases, micro-palabra y diagrama de buses.
@@ -423,6 +448,9 @@ Tablero en GitHub Projects con las columnas **Backlog → Ready → In progress 
 | Programa que toca 8 páginas (RAM llena) | FIFO saca páginas, write back de las modificadas y el dato vuelve correcto | ✅ |
 | Reemplazo LRU en L2 con 5 líneas distintas | Sale la línea menos usada | ✅ |
 | Lectura de la zona E0h–EFh | No pasa por la caché | ✅ |
+| Programa 1: factorial | `5! = 120 = 78h` | ✅ |
+| Programa 2: eco del teclado | "HOLA1234" aparece en la LCD | ✅ |
+| Programa 3: accesos dispersos | `SUM = 23h` con Page Faults y FIFO | ✅ |
 
 ---
 
