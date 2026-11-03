@@ -63,8 +63,27 @@ The keyboard queue and the LCD buffer are **stored in RAM** (frame 7):
 
 | Virtual | Physical | Content |
 |---|---|---|
-| `1E0h–1E7h` | `E0h–E7h` | Keyboard queue, 8 bytes (oldest char at `1E0h`) |
+| `1E0h–1E7h` | `E0h–E7h` | Keyboard queue, 8 bytes, circular FIFO (see below) |
 | `1E8h–1EFh` | `E8h–EFh` | LCD video buffer, 8 bytes (one ASCII char per cell) |
 
 The I/O range `1E0h–1EFh` is **non-cacheable**: the keyboard can change it at
 any time, so the cache always reads it directly from RAM.
+
+### Keyboard queue (circular FIFO, as in the class lab)
+
+The 8 chars live in RAM `E0h–E7h`. Three pointers in `modIO` control the queue:
+`HEAD` (next char to read), `TAIL` (next free position) and `COUNT` (chars waiting).
+
+| Operation | Condition | Action |
+|---|---|---|
+| Keyboard types a char | `COUNT < 8` | `RAM[E0h + TAIL] = char`, `TAIL = (TAIL + 1) mod 8`, `COUNT + 1` |
+| `IN reg, [KBD]` | `COUNT > 0` | `reg = RAM[E0h + HEAD]`, `HEAD = (HEAD + 1) mod 8`, `COUNT - 1` |
+| `IN reg, [KBD]` | `COUNT = 0` | `reg = 0` (queue empty) |
+| Keyboard types a char | `COUNT = 8` | The char is discarded (overflow) |
+
+### LCD 8x1
+
+`OUT [LCD], reg` writes the char at the cursor (`E8h + cursor`) and moves the cursor.
+When the line is full the text scrolls one position to the left. Char `08h`
+(backspace) moves the cursor back and writes a space (`20h`).
+
