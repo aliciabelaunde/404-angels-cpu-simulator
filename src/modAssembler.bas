@@ -437,13 +437,188 @@ Public Function Asm_Byte(ByVal addr As Long) As Long
 End Function
 
 '==============================================================================
-'  5. SHEET "Programs"  (temporary)
+'  5. SHEET "Programs"
+'     A4:F7     catalog: the programs saved on "disk" (columns K, L, M)
+'     A9:B9     result of the last assembly
+'     A11:E110  editor: A line, B source code, C address, D bytes, E status
+'     K5:M105   catalog programs (one line per cell, first line = name)
+'
+'  The programs are NOT inside the VBA code: they are written in the cells.
 '==============================================================================
-Public Sub Asm_SetupSheet()
-    GetSheet(SH_PROGRAMS).Range("A1").Value = TEAM_NAME & " - Program directory"
+Private Const ED_ROW As Long = 11       ' first editor row
+Private Const CAT_ROW As Long = 6       ' first catalog row
+
+Private Sub AsmHeader(ByVal c As Range, ByVal txt As String)
+    c.Value = txt
+    c.Font.Bold = True
+    c.Font.Color = RGB(255, 255, 255)
+    c.Interior.Color = RGB(64, 64, 64)
+    c.HorizontalAlignment = xlCenter
 End Sub
 
+Private Sub AsmButton(ByVal ws As Worksheet, ByVal nm As String, ByVal where As Range, _
+                      ByVal txt As String, ByVal macro As String, ByVal color As Long)
+    Dim shp As Shape
+    On Error Resume Next
+    ws.Shapes("btnAsm" & nm).Delete
+    Set shp = ws.Shapes.AddShape(5, where.Left + 2, where.Top + 1, where.Width - 4, where.Height - 2)
+    shp.Name = "btnAsm" & nm
+    shp.Fill.ForeColor.RGB = color
+    shp.Line.Visible = msoFalse
+    shp.OnAction = macro
+    shp.TextFrame.Characters.Text = txt
+    shp.TextFrame.Characters.Font.Bold = True
+    shp.TextFrame.Characters.Font.Size = 9
+    shp.TextFrame.Characters.Font.Color = RGB(255, 255, 255)
+    shp.TextFrame.HorizontalAlignment = xlHAlignCenter
+    shp.TextFrame.VerticalAlignment = xlVAlignCenter
+    On Error GoTo 0
+End Sub
+
+' The name of a catalog program is its first line, without the ';'
+Private Function ProgramName(ByVal ws As Worksheet, ByVal k As Long) As String
+    Dim s As String
+    s = Trim(CStr(ws.Cells(CAT_ROW, 10 + k).Value))
+    If Left(s, 1) = ";" Then s = Trim(Mid(s, 2))
+    If s = "" Then s = "(empty: paste the program in column " & Chr(Asc("J") + k) & ")"
+    ProgramName = s
+End Function
+
+Public Sub Asm_SetupSheet()
+    Dim ws As Worksheet, k As Long
+    Set ws = GetSheet(SH_PROGRAMS)
+    ' Only the layout is created. Columns K:M (the catalog) are never cleared.
+    ws.Range("A1:I110").Clear
+    ws.Range("A1:I110").Font.Name = "Consolas"
+    ws.Range("A1:I110").Font.Size = 10
+
+    ws.Range("A1").Value = TEAM_NAME & " - Program directory"
+    ws.Range("A1").Font.Size = 16
+    ws.Range("A1").Font.Bold = True
+    ws.Range("A2").Value = "Catalog (disk) -> OPEN -> editor -> ASSEMBLE -> LOAD PROGRAM -> virtual memory"
+
+    ' catalog list
+    AsmHeader ws.Range("A4:F4"), "CATALOG"
+    For k = 1 To 3
+        ws.Cells(4 + k, 1).Value = k
+        ws.Cells(4 + k, 1).HorizontalAlignment = xlCenter
+        AsmButton ws, "Open" & k, ws.Cells(4 + k, 6), "OPEN " & k, "BtnOpenProgram" & k, RGB(47, 117, 181)
+    Next k
+
+    ' result line and main buttons
+    ws.Range("A9").Value = "Result"
+    ws.Range("A9").Font.Bold = True
+    AsmButton ws, "Assemble", ws.Range("G11:H12"), "ASSEMBLE", "BtnAssemble", RGB(191, 143, 0)
+    AsmButton ws, "Load", ws.Range("G14:H15"), "LOAD PROGRAM", "BtnLoadProgram", RGB(84, 130, 53)
+
+    ' editor
+    AsmHeader ws.Range("A10"), "Line"
+    AsmHeader ws.Range("B10"), "Source code (edit here)"
+    AsmHeader ws.Range("C10"), "Address"
+    AsmHeader ws.Range("D10"), "Bytes"
+    AsmHeader ws.Range("E10"), "Status"
+    For k = 1 To MAX_LINES
+        ws.Cells(ED_ROW + k - 1, 1).Value = k
+    Next k
+    ws.Range("A11:A110").HorizontalAlignment = xlCenter
+    ws.Range("A11:A110").Font.Color = RGB(128, 128, 128)
+    ws.Range("B11:B110").Interior.Color = RGB(255, 255, 240)
+    ws.Range("B11:B110").NumberFormat = "@"
+    ws.Range("C11:D110").NumberFormat = "@"
+    ws.Range("C11:C110").HorizontalAlignment = xlCenter
+
+    ' catalog columns (only the headers; the programs stay as they are)
+    For k = 1 To 3
+        AsmHeader ws.Cells(CAT_ROW - 1, 10 + k), "PROGRAM " & k
+        ws.Range(ws.Cells(CAT_ROW, 10 + k), ws.Cells(CAT_ROW + MAX_LINES - 1, 10 + k)).NumberFormat = "@"
+    Next k
+
+    ws.Columns("A").ColumnWidth = 6
+    ws.Columns("B").ColumnWidth = 34
+    ws.Columns("C").ColumnWidth = 9
+    ws.Columns("D").ColumnWidth = 12
+    ws.Columns("E").ColumnWidth = 40
+    ws.Columns("F:I").ColumnWidth = 9
+    ws.Columns("J").ColumnWidth = 2
+    ws.Columns("K:M").ColumnWidth = 34
+
+    ShowCatalog ws
+End Sub
+
+Private Sub ShowCatalog(ByVal ws As Worksheet)
+    Dim k As Long
+    For k = 1 To 3
+        ws.Cells(4 + k, 2).Value = ProgramName(ws, k)
+    Next k
+End Sub
+
+' OPEN 1 / 2 / 3: copies a catalog program into the editor
+Private Sub OpenProgram(ByVal k As Long)
+    Dim ws As Worksheet, i As Long
+    Set ws = GetSheet(SH_PROGRAMS)
+    ws.Range("B11:E110").ClearContents      ' empty the editor first
+    For i = 1 To MAX_LINES
+        If CStr(ws.Cells(CAT_ROW + i - 1, 10 + k).Value) <> "" Then
+            ws.Cells(ED_ROW + i - 1, 2).Value = ws.Cells(CAT_ROW + i - 1, 10 + k).Value
+        End If
+    Next i
+    ws.Range("B11:E110").Interior.Color = RGB(255, 255, 240)
+    ws.Range("B9").Value = "Program " & k & " opened in the editor: " & ProgramName(ws, k)
+    ws.Range("B9").Interior.Color = RGB(221, 235, 247)
+    ShowCatalog ws
+End Sub
+
+Public Sub BtnOpenProgram1()
+    OpenProgram 1
+End Sub
+
+Public Sub BtnOpenProgram2()
+    OpenProgram 2
+End Sub
+
+Public Sub BtnOpenProgram3()
+    OpenProgram 3
+End Sub
+
+' Reads the editor, assembles it and shows address, bytes and errors per line
+Private Function AssembleEditor() As Long
+    Dim ws As Worksheet, lines() As String, i As Long, errors As Long
+    Set ws = GetSheet(SH_PROGRAMS)
+    ReDim lines(1 To MAX_LINES)
+    For i = 1 To MAX_LINES
+        lines(i) = CStr(ws.Cells(ED_ROW + i - 1, 2).Value)
+    Next i
+
+    errors = Asm_AssembleLines(lines, MAX_LINES)
+
+    For i = 1 To MAX_LINES
+        If LineAddr(i) >= 0 And Trim(lines(i)) <> "" Then
+            ws.Cells(ED_ROW + i - 1, 3).Value = Hex3(LineAddr(i)) & "h"
+        Else
+            ws.Cells(ED_ROW + i - 1, 3).Value = ""
+        End If
+        ws.Cells(ED_ROW + i - 1, 4).Value = LineBytes(i)
+        If LineError(i) <> "" Then
+            ws.Cells(ED_ROW + i - 1, 5).Value = "ERROR: " & LineError(i)
+            ws.Range(ws.Cells(ED_ROW + i - 1, 2), ws.Cells(ED_ROW + i - 1, 5)).Interior.Color = RGB(255, 199, 206)
+        Else
+            ws.Cells(ED_ROW + i - 1, 5).Value = ""
+            ws.Range(ws.Cells(ED_ROW + i - 1, 2), ws.Cells(ED_ROW + i - 1, 5)).Interior.Color = RGB(255, 255, 240)
+        End If
+    Next i
+
+    If errors = 0 Then
+        ws.Range("B9").Value = "OK: " & ImageLength & " bytes (000h-" & Hex3(ImageLength - 1) & "h), no errors."
+        ws.Range("B9").Interior.Color = RGB(198, 239, 206)
+    Else
+        ws.Range("B9").Value = errors & " error(s). Fix the red lines and press ASSEMBLE again."
+        ws.Range("B9").Interior.Color = RGB(255, 199, 206)
+    End If
+    AssembleEditor = errors
+End Function
+
 Public Sub BtnAssemble()
+    Call AssembleEditor
 End Sub
 
 '==============================================================================
