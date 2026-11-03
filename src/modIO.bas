@@ -142,11 +142,175 @@ Public Sub IO_LcdWrite(ByVal value As Long)
 End Sub
 
 '==============================================================================
-'  4. SHEET "IO"  (temporary)
+'  4. SHEET "IO"
+'     A4:I6    keyboard: type in B5 and press SEND
+'     A8:I17   keyboard queue E0h-E7h with HEAD / TAIL / COUNT
+'     A19:I23  LCD 8x1 E8h-EFh with cursor
+'     A25:C25  bus signals En_KBD and Ld_LCD (read from modBus)
+'     A27      last event
+'
+'  Colors: yellow = read now (IN) or written now (OUT), green = just typed,
+'          red = queue full
 '==============================================================================
+Private Sub IoHeader(ByVal c As Range, ByVal txt As String)
+    c.Value = txt
+    c.Font.Bold = True
+    c.Font.Color = RGB(255, 255, 255)
+    c.Interior.Color = RGB(64, 64, 64)
+    c.HorizontalAlignment = xlCenter
+End Sub
+
+Private Function CharText(ByVal v As Long) As String
+    If v >= 32 And v <= 126 Then
+        CharText = Chr(v)
+    Else
+        CharText = ""
+    End If
+End Function
+
 Public Sub IO_SetupSheet()
-    GetSheet(SH_IO).Range("A1").Value = TEAM_NAME & " - Keyboard and LCD 8x1"
+    Dim ws As Worksheet, i As Long, shp As Shape
+    Set ws = GetSheet(SH_IO)
+    ws.Cells.Clear
+    ws.Cells.Font.Name = "Consolas"
+    ws.Cells.Font.Size = 10
+    ws.Columns("A").ColumnWidth = 16
+    ws.Columns("B:I").ColumnWidth = 8
+
+    ws.Range("A1").Value = TEAM_NAME & " - Keyboard and LCD 8x1"
+    ws.Range("A1").Font.Size = 16
+    ws.Range("A1").Font.Bold = True
+    ws.Range("A2").Value = "Memory-mapped I/O in RAM frame 7: keyboard queue E0h-E7h, LCD buffer E8h-EFh"
+
+    ' keyboard input
+    IoHeader ws.Range("A4:I4"), "KEYBOARD"
+    ws.Range("A5").Value = "Type text:"
+    ws.Range("B5:D5").Interior.Color = RGB(255, 242, 204)
+    ws.Range("B5").NumberFormat = "@"
+    ws.Range("A6").Value = "Write in B5 and press SEND. Each char goes to the queue (max 8)."
+    ws.Range("A6").Font.Size = 8
+
+    ' SEND button (same style as the CPU buttons)
+    On Error Resume Next
+    For i = ws.Shapes.Count To 1 Step -1
+        If Left(ws.Shapes(i).Name, 5) = "btnIO" Then ws.Shapes(i).Delete
+    Next i
+    Set shp = ws.Shapes.AddShape(5, ws.Range("F5").Left, ws.Range("F5").Top - 2, ws.Range("F5:G5").Width, ws.Range("F5").Height + 4)
+    shp.Name = "btnIOSend"
+    shp.Fill.ForeColor.RGB = RGB(84, 130, 53)
+    shp.Line.Visible = msoFalse
+    shp.OnAction = "BtnKeyboardSend"
+    shp.TextFrame.Characters.Text = "SEND"
+    shp.TextFrame.Characters.Font.Bold = True
+    shp.TextFrame.Characters.Font.Color = RGB(255, 255, 255)
+    shp.TextFrame.HorizontalAlignment = xlHAlignCenter
+    shp.TextFrame.VerticalAlignment = xlVAlignCenter
+    On Error GoTo 0
+
+    ' keyboard queue
+    IoHeader ws.Range("A8:I8"), "KEYBOARD QUEUE (circular FIFO, 8 bytes)"
+    ws.Range("A9").Value = "Address"
+    ws.Range("A10").Value = "Char"
+    ws.Range("A11").Value = "Hex"
+    ws.Range("A12").Value = "Pointer"
+    For i = 0 To 7
+        ws.Cells(9, 2 + i).Value = Hex2(KBD_PA + i) & "h"
+        ws.Cells(9, 2 + i).Font.Bold = True
+    Next i
+    ws.Range("A14").Value = "HEAD (read)"
+    ws.Range("A15").Value = "TAIL (write)"
+    ws.Range("A16").Value = "COUNT"
+    ws.Range("A17").Value = "Status"
+
+    ' LCD
+    IoHeader ws.Range("A19:I19"), "LCD 8x1 (video buffer)"
+    ws.Range("A20").Value = "Address"
+    ws.Range("A21").Value = "Screen"
+    ws.Range("A22").Value = "Hex"
+    ws.Range("A23").Value = "Cursor"
+    For i = 0 To 7
+        ws.Cells(20, 2 + i).Value = Hex2(LCD_PA + i) & "h"
+        ws.Cells(20, 2 + i).Font.Bold = True
+    Next i
+    ws.Range("B21:I21").Font.Size = 20
+    ws.Range("B21:I21").Font.Bold = True
+    ws.Rows(21).RowHeight = 34
+
+    ' bus signals
+    ws.Range("A25").Value = "Bus signals"
+    ws.Range("B25").Value = "En_KBD"
+    ws.Range("C25").Value = "Ld_LCD"
+    ws.Range("A27").Value = "Last event"
+
+    ws.Range("B9:I23").HorizontalAlignment = xlCenter
+    ws.Range("B10:I11").NumberFormat = "@"
+    ws.Range("B21:I22").NumberFormat = "@"
+    ws.Range("B14:B17").HorizontalAlignment = xlLeft
+    ws.Range("B25:C25").HorizontalAlignment = xlCenter
+
+    IO_Paint
 End Sub
 
 Public Sub IO_Paint()
+    Dim ws As Worksheet, i As Long, v As Long, color As Long
+    Set ws = GetSheet(SH_IO)
+
+    ' keyboard queue
+    For i = 0 To 7
+        v = RAM_Read(KBD_PA + i)
+        ws.Cells(10, 2 + i).Value = CharText(v)
+        ws.Cells(11, 2 + i).Value = Hex2(v)
+        ws.Cells(12, 2 + i).Value = ""
+        color = RGB(242, 242, 242)
+        If i = LastWrite Then color = RGB(198, 239, 206)   ' green: just typed
+        If i = LastRead Then color = RGB(255, 235, 156)    ' yellow: read by IN
+        ws.Range(ws.Cells(10, 2 + i), ws.Cells(11, 2 + i)).Interior.Color = color
+    Next i
+    If KbdHead = KbdTail Then
+        ws.Cells(12, 2 + KbdHead).Value = "H/T"
+    Else
+        ws.Cells(12, 2 + KbdHead).Value = "HEAD"
+        ws.Cells(12, 2 + KbdTail).Value = "TAIL"
+    End If
+    ws.Range("B14").Value = KbdHead
+    ws.Range("B15").Value = KbdTail
+    ws.Range("B16").Value = KbdCount
+    If KbdCount = 0 Then
+        ws.Range("B17").Value = "EMPTY"
+        ws.Range("B17:D17").Interior.Color = RGB(217, 217, 217)
+    ElseIf KbdCount = 8 Then
+        ws.Range("B17").Value = "FULL"
+        ws.Range("B17:D17").Interior.Color = RGB(255, 199, 206)
+    Else
+        ws.Range("B17").Value = KbdCount & " char(s) waiting"
+        ws.Range("B17:D17").Interior.Color = RGB(198, 239, 206)
+    End If
+
+    ' LCD
+    For i = 0 To 7
+        v = RAM_Read(LCD_PA + i)
+        ws.Cells(21, 2 + i).Value = CharText(v)
+        ws.Cells(22, 2 + i).Value = Hex2(v)
+        If i = LastLcd Then
+            ws.Cells(21, 2 + i).Interior.Color = RGB(60, 90, 40)
+        Else
+            ws.Cells(21, 2 + i).Interior.Color = RGB(30, 50, 20)
+        End If
+        ws.Cells(21, 2 + i).Font.Color = RGB(150, 255, 120)
+    Next i
+    ws.Range("B23").Value = LcdCursor
+
+    ' bus signals: green when the keyboard drives the bus or the LCD loads from it
+    If InStr(ControlWord, "En_KBD") > 0 Then
+        ws.Range("B25").Interior.Color = RGB(0, 176, 80)
+    Else
+        ws.Range("B25").Interior.Color = RGB(217, 217, 217)
+    End If
+    If InStr(ControlWord, "Ld_LCD") > 0 Then
+        ws.Range("C25").Interior.Color = RGB(0, 112, 192)
+    Else
+        ws.Range("C25").Interior.Color = RGB(217, 217, 217)
+    End If
+
+    ws.Range("B27").Value = IoEvent
 End Sub
