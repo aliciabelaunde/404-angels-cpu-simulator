@@ -622,16 +622,36 @@ Public Sub BtnAssemble()
 End Sub
 
 '==============================================================================
-'  6. LOADER  (temporary: loads only HLT)
+'  6. LOADER: assembles the editor and puts the program in virtual memory
 '==============================================================================
 Public Sub BtnLoadProgram()
-    Dim img() As Long
-    ReDim img(0 To 0)
-    img(0) = &HFF
+    Dim ws As Worksheet, img() As Long, i As Long
+    Set ws = GetSheet(SH_PROGRAMS)
+    If AssembleEditor() > 0 Then Exit Sub
+    If ImageLength = 0 Then
+        ws.Range("B9").Value = "The editor is empty: open a program first."
+        Exit Sub
+    End If
+
+    ReDim img(0 To ImageLength - 1)
+    For i = 0 To ImageLength - 1
+        img(i) = Image(i)
+    Next i
+
+    ' same order as docs/INTERFACES.md
     VM_Reset
-    VM_LoadImage img, 1
+    VM_LoadImage img, ImageLength
     Cache_Reset
     IO_Reset
     Bus_Reset
     Core_Reset
+
+    Core_Paint
+    Bus_Paint
+    Cache_Paint
+    VM_Paint
+    IO_Paint
+
+    ws.Range("B9").Value = "Loaded " & ImageLength & " bytes into virtual memory (swap). Go to sheet CPU and press STEP or RUN."
+    ws.Range("B9").Interior.Color = RGB(198, 239, 206)
 End Sub
