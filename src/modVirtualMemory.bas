@@ -46,6 +46,7 @@ Private VictimPage As Long              ' page taken out of RAM (-1 = none)
 Private VictimSaved As Boolean          ' True if the victim was saved to swap
 Private EventText As String
 Private MemChanged As Boolean           ' True when RAM or swap must be repainted
+Private Const VMDG As String = "vmdg_"       ' prefix of every shape of this diagram
 
 '==============================================================================
 '  1. RESET
@@ -505,7 +506,6 @@ End Sub
 '     PAGE IN arrow    = red when a page comes from swap (page fault)
 '     WRITE BACK arrow = orange when a dirty page goes back to swap
 '==============================================================================
-Private Const VMDG As String = "vmdg_"       ' prefix of every shape of this diagram
 
 Private Function VmShape(ByVal ws As Worksheet, ByVal nm As String, ByVal kind As Long, _
                          ByVal x As Double, ByVal y As Double, ByVal w As Double, ByVal h As Double, _
