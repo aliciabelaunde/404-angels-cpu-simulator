@@ -18,6 +18,8 @@ Attribute VB_Name = "modAssembler"
 Option Explicit
 
 Private Const MAX_LINES As Long = 100
+Private Const ED_ROW As Long = 11       ' first editor row
+Private Const CAT_ROW As Long = 6       ' first catalog row
 
 ' --- Program image (result of the last assembly) -------------------------------
 Private Image(0 To 511) As Long         ' bytes of the 512-byte virtual space
@@ -445,8 +447,6 @@ End Function
 '
 '  The programs are NOT inside the VBA code: they are written in the cells.
 '==============================================================================
-Private Const ED_ROW As Long = 11       ' first editor row
-Private Const CAT_ROW As Long = 6       ' first catalog row
 
 Private Sub AsmHeader(ByVal c As Range, ByVal txt As String)
     c.Value = txt
