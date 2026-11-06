@@ -620,6 +620,7 @@ End Sub
 Public Sub Core_SetupSheet()
     Dim ws As Worksheet, i As Long, names As Variant
     Set ws = Sh
+    Application.DisplayAlerts = False           ' no "merging cells" warnings
     ws.Cells.Font.Name = "Calibri"
     ws.Columns("A").ColumnWidth = 28
     ws.Columns("B").ColumnWidth = 13
@@ -725,6 +726,7 @@ Public Sub Core_SetupSheet()
     SetupLogSheet
     CreateButtons
     Bus_SetupSheet
+    Application.DisplayAlerts = True
 End Sub
 
 Private Sub Header(ByVal r As Range, ByVal txt As String)
