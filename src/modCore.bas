@@ -67,6 +67,7 @@ End Type
 ' --- Sheet layout -------------------------------------------------------------
 Private Const LOG_ROW1 As Long = 28
 Private Const LOG_ROWN As Long = 46
+Private Const FAST_PAINT As Long = 25    ' RUN with delay 0 repaints every 25 pulses
 
 '==============================================================================
 '  1. UTILITIES
@@ -620,6 +621,7 @@ End Sub
 Public Sub Core_SetupSheet()
     Dim ws As Worksheet, i As Long, names As Variant
     Set ws = Sh
+    Application.DisplayAlerts = False           ' no "merging cells" warnings
     ws.Cells.Font.Name = "Calibri"
     ws.Columns("A").ColumnWidth = 28
     ws.Columns("B").ColumnWidth = 13
@@ -725,6 +727,7 @@ Public Sub Core_SetupSheet()
     SetupLogSheet
     CreateButtons
     Bus_SetupSheet
+    Application.DisplayAlerts = True
 End Sub
 
 Private Sub Header(ByVal r As Range, ByVal txt As String)
@@ -745,12 +748,12 @@ Private Sub CreateButtons()
             ws.Shapes(i).Delete
         End If
     Next i
-    labels = Array("STEP (micro-op)", "STEP INSTR", "RUN", "PAUSE", "RESET", "LOAD DEMO")
-    macros = Array("BtnStep", "BtnStepInstr", "BtnRun", "BtnPause", "BtnReset", "BtnLoadDemo")
-    colors = Array(RGB(47, 117, 181), RGB(31, 78, 121), RGB(84, 130, 53), RGB(191, 143, 0), RGB(192, 0, 0), RGB(112, 48, 160))
+    labels = Array("STEP (micro-op)", "STEP INSTR", "RUN", "PAUSE", "RESET")
+    macros = Array("BtnStep", "BtnStepInstr", "BtnRun", "BtnPause", "BtnReset")
+    colors = Array(RGB(47, 117, 181), RGB(31, 78, 121), RGB(84, 130, 53), RGB(191, 143, 0), RGB(192, 0, 0))
     w = (ws.Range("A13:D13").Width - 18) / 2
     h = (ws.Range("A13:A17").Height - 18) / 3
-    For i = 0 To 5
+    For i = 0 To 4
         x = ws.Range("A13").Left + 6 + (i Mod 2) * (w + 6)
         y = ws.Range("A13").Top + 4 + (i \ 2) * (h + 5)
         Set shp = ws.Shapes.AddShape(5, x, y, w, h)
@@ -880,12 +883,17 @@ Private Sub WriteLog()
     ws.Range("A" & LOG_ROW1 & ":A" & LOG_ROWN).Value = v
 End Sub
 
+' Repaints every panel with ONE screen redraw (not one redraw per cell)
 Private Sub PaintAll()
+    Dim su As Boolean
+    su = Application.ScreenUpdating
+    Application.ScreenUpdating = False
     Core_Paint
     Bus_Paint
     Cache_Paint
     VM_Paint
     IO_Paint
+    Application.ScreenUpdating = su
 End Sub
 
 Private Sub WaitMs(ByVal ms As Long)
@@ -902,7 +910,7 @@ End Sub
 '==============================================================================
 Private Function CheckHalted() As Boolean
     If Halted Then
-        MsgBox "The CPU is halted (HLT). Press RESET or LOAD DEMO.", vbInformation, TEAM_NAME
+        MsgBox "The CPU is halted (HLT). Press RESET, or load a program in sheet Programs.", vbInformation, TEAM_NAME
         CheckHalted = True
     End If
 End Function
@@ -924,37 +932,56 @@ Public Sub BtnStepInstr()
     Dim n As Long
     If Running Then Exit Sub
     If CheckHalted() Then Exit Sub
+    Application.ScreenUpdating = False
     Do
         MicroStep
         WriteLog
         n = n + 1
     Loop Until Halted Or (Phase = "FETCH" And Micro = 0) Or n > 30
     PaintAll
+    Application.ScreenUpdating = True
     If Halted Then
         SetStatus "HALTED"
     End If
 End Sub
 
 Public Sub BtnRun()
-    ' RUN: continuous execution with the delay of cell D11 (ms)
-    Dim delay As Long
+    ' RUN: continuous execution.
+    '   Run delay (D11) > 0 : animated mode, repaints every pulse and waits the delay
+    '   Run delay (D11) = 0 : fast mode, repaints every FAST_PAINT pulses
+    Dim delay As Long, paintEvery As Long, calcMode As Long
     If Running Then Exit Sub
     If CheckHalted() Then Exit Sub
     delay = Val(Sh.Range("D11").Value)
     If delay < 0 Then delay = 0
+    If delay = 0 Then paintEvery = FAST_PAINT Else paintEvery = 1
     Paused = False
     Running = True
-    SetStatus "RUNNING..."
+    calcMode = Application.Calculation
+    Application.Calculation = xlCalculationManual
+    Application.EnableEvents = False
+    On Error GoTo Finish
+    SetStatus IIf(delay = 0, "RUNNING (fast)...", "RUNNING...")
     Do While Not Halted And Not Paused
+        Application.ScreenUpdating = False
         MicroStep
         WriteLog
-        PaintAll
+        If Pulses Mod paintEvery = 0 Or Halted Then
+            PaintAll
+            Application.ScreenUpdating = True
+        End If
         DoEvents
         If delay > 0 Then
             WaitMs delay
         End If
         If Pulses > 20000 Then Exit Do        ' protection against infinite loops
     Loop
+Finish:
+    Application.ScreenUpdating = False
+    PaintAll
+    Application.ScreenUpdating = True
+    Application.EnableEvents = True
+    Application.Calculation = calcMode
     Running = False
     If Halted Then
         SetStatus "HALTED"
@@ -976,44 +1003,4 @@ Public Sub BtnReset()
     Bus_Reset
     Core_Reset
     PaintAll
-End Sub
-
-'==============================================================================
-'  7. QUICK DEMO (developer shortcut; the real catalog lives in modAssembler)
-'
-'  Multiplication by repeated addition: 7 x 3 = 21 = 15h
-'   Addr Bytes      Label  Instruction        Comment
-'   000  A1 80 00   START  LOAD BX, [080h]    BX = A
-'   003  A2 81 00          LOAD CX, [081h]    CX = B (counter)
-'   006  80 00             MOV AX, 0          AX = 0
-'   008  8E 00             CMP CX, 0          B = 0 ?
-'   00A  C1 12 00          JZ END
-'   00D  21         LOOP   ADD AX, BX         AX = AX + A
-'   00E  B6                DEC CX             CX = CX - 1
-'   00F  C2 0D 00          JNZ LOOP
-'   012  A4 82 00   END    STORE [082h], AX   RES = AX
-'   015  FF                HLT
-'   080  07 03 00          A, B, RES
-'==============================================================================
-Public Sub BtnLoadDemo()
-    Dim img() As Long, code As Variant, i As Long
-    If Running Then Exit Sub
-    ReDim img(0 To &H82)
-    code = Array(&HA1, &H80, &H0, &HA2, &H81, &H0, &H80, &H0, &H8E, &H0, &HC1, &H12, &H0, _
-                 &H21, &HB6, &HC2, &HD, &H0, &HA4, &H82, &H0, &HFF)
-    For i = 0 To UBound(code)
-        img(i) = code(i)
-    Next i
-    img(&H80) = 7
-    img(&H81) = 3
-    img(&H82) = 0
-    VM_Reset
-    VM_LoadImage img, &H83
-    Cache_Reset
-    IO_Reset
-    Bus_Reset
-    Core_Reset
-    PaintAll
-    RtlText = "Demo loaded: 7 x 3 (result in 082h)"
-    Sh.Range("A21").Value = RtlText
 End Sub
