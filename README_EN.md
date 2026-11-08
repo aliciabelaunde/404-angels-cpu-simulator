@@ -221,7 +221,7 @@ flowchart TD
 
 The Cache sheet shows every line (valid bit, tag, 8 bytes and LRU age) with the byte just read in yellow. It also has hit and miss counters with the hit rate of each level, and an animated CPU → L1 → L2 → RAM diagram where the path of each access turns green on a HIT and red on a MISS.
 
-With the multiplication program (7 × 3) the hit rates are L1I 78.1 %, L1D 66.7 % and L2 50.0 %.
+With program 1 (factorial) the hit rates are L1I 84.7 %, L1D 50.0 % and L2 70.0 %.
 
 
 ## 5. Virtual memory and page faults
@@ -348,6 +348,8 @@ The programs are not written inside the VBA code. They live in the cells of the 
 | 2 | [`02_keyboard_echo.asm`](programs/02_keyboard_echo.asm) | `IN` / `OUT`: whatever is typed on the keyboard appears on the LCD | 8 characters on the LCD |
 | 3 | [`03_page_faults.asm`](programs/03_page_faults.asm) | Scattered accesses to pages 8–14: page faults, FIFO, write back and cache misses | `SUM = 23h` at `1DFh` |
 
+The [`programs/examples`](programs/examples/) folder also has 18 short examples, one per instruction type, each with its input and expected output. Its [README](programs/examples/README.md) explains how to run them.
+
 The assembler works in two passes. It accepts labels (`LOOP:`), comments (`;`), decimal or hexadecimal numbers (`0Ch`, `1E0h`) and the `ORG` and `DB` directives. Lines with errors turn red and show what is wrong.
 
 Syntax:
@@ -436,9 +438,9 @@ The board is in GitHub Projects with the columns Backlog → Ready → In progre
 
 | Test | Expected result | Result |
 |---|---|---|
-| Multiplication program 7 × 3 | AX = 15h, 16 instructions, 147 pulses | ✅ |
-| Page faults with the demo | 2 (code page 0 and data page 4) | ✅ |
-| Cache with the demo | L1I 78.1 %, L1D 66.7 %, L2 50.0 % | ✅ |
+| Program 1 (factorial) | AX = 78h, 68 instructions, 578 pulses | ✅ |
+| Page faults with program 1 | 2 (code page 0 and data page 8) | ✅ |
+| Cache with program 1 | L1I 84.7 %, L1D 50.0 %, L2 70.0 % | ✅ |
 | One driver per bus rule | "OK" on every pulse | ✅ |
 | Program that touches 8 pages (RAM full) | FIFO replaces pages, dirty pages are written back and the data comes back correct | ✅ |
 | LRU replacement in L2 with 5 different lines | The least recently used line leaves | ✅ |
@@ -457,6 +459,7 @@ The board is in GitHub Projects with the columns Backlog → Ready → In progre
 ├── README.md                         # Spanish documentation
 ├── README_EN.md                      # English documentation
 ├── programs/                         # the 3 catalog programs (.asm)
+│   └── examples/                     # 18 examples, one per instruction type
 ├── src/                              # VBA modules (.bas), one per subsystem
 │   ├── modCore.bas  modBus.bas  modCache.bas
 │   ├── modVirtualMemory.bas  modIO.bas  modAssembler.bas

@@ -10,6 +10,8 @@ and these files keep a copy in the repository.
 | 2 | `02_keyboard_echo.asm` | `IN` / `OUT`: every char typed in sheet IO is shown on the LCD 8x1 |
 | 3 | `03_page_faults.asm` | Scattered accesses to pages 8-14: page faults, FIFO, write back and cache misses. `SUM = 23h` at `1DFh` |
 
+The [`examples`](examples/) folder has 18 short programs, one per instruction type (registers, ALU, memory, jumps, keyboard, LCD, virtual memory, swap and cache). Each one says its input and expected output. See [examples/README.md](examples/README.md).
+
 ## Put a program in the catalog
 
 1. Open the `.asm` file in VS Code, select everything (Ctrl+A) and copy it (Ctrl+C).
