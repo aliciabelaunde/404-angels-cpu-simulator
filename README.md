@@ -221,7 +221,7 @@ flowchart TD
 
 **Hoja Cache:** contenido de cada línea (válida, etiqueta, 8 bytes y edad LRU), el byte leído resaltado en amarillo, contadores de aciertos y fallos con **tasa de aciertos (hit rate)** por nivel, y un diagrama animado CPU → L1 → L2 → RAM con el camino del acceso en verde (HIT) o rojo (MISS).
 
-Ejemplo con el programa de multiplicación (7 × 3): **L1I 78.1 %**, **L1D 66.7 %**, **L2 50.0 %**.
+Ejemplo con el programa 1 (factorial): **L1I 84.7 %**, **L1D 50.0 %**, **L2 70.0 %**.
 
 
 ## 5. Memoria virtual y Page Fault
@@ -348,6 +348,8 @@ Los programas **no están dentro del código VBA**: se escriben en las **celdas 
 | 2 | [`02_keyboard_echo.asm`](programs/02_keyboard_echo.asm) | `IN` / `OUT`: lo escrito en el teclado aparece en la LCD | 8 caracteres en la LCD |
 | 3 | [`03_page_faults.asm`](programs/03_page_faults.asm) | Accesos dispersos a las páginas 8–14: Page Faults, FIFO, write back y fallos de caché | `SUM = 23h` en `1DFh` |
 
+Además, la carpeta [`programs/examples`](programs/examples/) tiene 18 ejemplos cortos, uno por tipo de instrucción, cada uno con su entrada y su salida esperada. Su [README](programs/examples/README.md) explica cómo correrlos.
+
 **Ensamblador de dos pasadas:** acepta etiquetas (`BUCLE:`), comentarios (`;`), números decimales o hexadecimales (`0Ch`, `1E0h`) y las directivas `ORG` y `DB`. Las líneas con error se marcan en rojo con su descripción.
 
 **Sintaxis:**
@@ -441,9 +443,9 @@ Tablero en GitHub Projects con las columnas **Backlog → Ready → In progress 
 
 | Prueba | Resultado esperado | Resultado |
 |---|---|---|
-| Programa de multiplicación 7 × 3 | AX = 15h, 16 instrucciones, 147 pulsos | ✅ |
-| Page Faults con la demo | 2 (página 0 de código y página 4 de datos) | ✅ |
-| Caché con la demo | L1I 78.1 %, L1D 66.7 %, L2 50.0 % | ✅ |
+| Programa 1 (factorial) | AX = 78h, 68 instrucciones, 578 pulsos | ✅ |
+| Page Faults con el programa 1 | 2 (página 0 de código y página 8 de datos) | ✅ |
+| Caché con el programa 1 | L1I 84.7 %, L1D 50.0 %, L2 70.0 % | ✅ |
 | Regla de un solo emisor por bus | "OK" en cada pulso | ✅ |
 | Programa que toca 8 páginas (RAM llena) | FIFO saca páginas, write back de las modificadas y el dato vuelve correcto | ✅ |
 | Reemplazo LRU en L2 con 5 líneas distintas | Sale la línea menos usada | ✅ |
@@ -461,6 +463,8 @@ Tablero en GitHub Projects con las columnas **Backlog → Ready → In progress 
 ├── 404 Angels - CPU Simulator.xlsm   # planilla final (solo en releases)
 ├── README.md                         # documentación en español
 ├── README_EN.md                      # documentación en inglés
+├── programs/                         # los 3 programas del catálogo (.asm)
+│   └── examples/                     # 18 ejemplos, uno por tipo de instrucción
 ├── src/                              # módulos VBA (.bas), uno por subsistema
 │   ├── modCore.bas  modBus.bas  modCache.bas
 │   ├── modVirtualMemory.bas  modIO.bas  modAssembler.bas
